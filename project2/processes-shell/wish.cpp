@@ -25,7 +25,7 @@ void execCmd(std::string path, std::vector<std::string> args, bool isRedirect) {
     // std::cout << "exec " << path << std::endl;
     int ret = fork();
     int diff = 0;
-    if (isRedirect) diff = -1;
+    if (isRedirect) diff = -2;
     if (ret < 0) {
         std::cerr << "error" << std::endl;
         return;
@@ -57,22 +57,27 @@ void execCd(std::string dir) {
 }
 
 void printVector(std::vector<std::string> vec) {
+    std::cout << "{";
     for (int i = 0; i < (int) vec.size(); i ++) {
-        std::cout << vec[i] << " ";
+        std::cout << vec[i];
+        if (i != (int) vec.size() - 1) std::cout << ", ";
     }
-    std::cout << std::endl;
+    std::cout << "}" << std::endl;
 }
 
+// return vector where each element is vector of args
 std::vector<std::string> splitByDelimiters(std::string s, int &redirectionIdx) {
     int left = 0;
     std::vector<std::string> result = {};
+    // std::cout << "parse " << s << std::endl;
 
     for (int right = 0; right < (int) s.size(); right ++) {
-        if (s[right] == ' ' || s[right] == '>') {
+        if (isspace(s[right]) || s[right] == '>') {
             if (left < right) {
                 result.push_back(s.substr(left, right - left));
             }
             if (s[right] == '>' && redirectionIdx == -1) {
+                result.push_back(">");
                 redirectionIdx = (int) result.size();
             }
             left = right + 1;
@@ -81,6 +86,10 @@ std::vector<std::string> splitByDelimiters(std::string s, int &redirectionIdx) {
     if (left != (int) s.size()) {
         result.push_back(s.substr(left, int (s.size()) - left));
     }
+
+    // std::cout << "stuff: ";
+    // printVector(result);
+    // std::cout << "yay" << std::endl;
 
     return result;
 }
@@ -98,7 +107,7 @@ int main(int argc, char* argv[]) {
     std::vector<std::string> paths = {"/bin/"};
 
     if (argc > 2) {
-        std::cout << "" << std::endl;
+        errorMessage(false);
         return EXIT_FAILURE;
     }
 
@@ -109,7 +118,7 @@ int main(int argc, char* argv[]) {
         inBatchMode = true;
         int fd = open(argv[1], O_RDONLY);
         if (fd == -1) {
-            std::cerr << "error opening batch mode file" << std::endl;
+            errorMessage(false);
             return (EXIT_FAILURE);
         }
         dup2(fd, STDIN_FILENO);
@@ -120,16 +129,24 @@ int main(int argc, char* argv[]) {
     std::string userIn = "";
     if (!inBatchMode) std::cout << "wish>";
     while (std::getline(std::cin, userIn)) {
-
         int redirectionIdx = -1;
         bool isRedirect = false;
-        std::vector<std::string> args = splitByDelimiters(userIn, redirectionIdx);
+
+        std::vector<std::string> args;
+        args = splitByDelimiters(userIn, redirectionIdx);
+        while ((int) args.size() == 0) {
+            std::getline(std::cin, userIn);
+            args = splitByDelimiters(userIn, redirectionIdx);
+        }
+        // std::cout << "line: " << userIn << ", length " << (int) userIn.size() << std::endl;
+
+        
         // std::cout << "args: ";
         // printVector(args);
         int stdout_fd = dup(STDOUT_FILENO);
         
         if (redirectionIdx != -1) {
-            if (redirectionIdx != int(args.size()) - 1 || redirectionIdx == 0) {
+            if (args[int(args.size()) - 2] != ">" || args[0] == ">") {
                 errorMessage(isRedirect);
                 continue;
             } else {
