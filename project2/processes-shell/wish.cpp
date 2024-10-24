@@ -1,22 +1,12 @@
 #include <iostream>
 #include <fcntl.h>
 #include <stdlib.h>
-#include <sys/types.h>
 #include <sys/uio.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #include <string>
 #include <vector>
 #include <cstring>
-
-void printVector(std::vector<std::string> vec) {
-    std::cout << "{";
-    for (int i = 0; i < (int) vec.size(); i ++) {
-        std::cout << vec[i];
-        if (i != (int) vec.size() - 1) std::cout << ", ";
-    }
-    std::cout << "}" << std::endl;
-}
 
 bool accessExists(std::string path) {
     if (access(path.c_str(), X_OK) == 0) return true;
@@ -28,6 +18,9 @@ bool fileExists(std::string path) {
     return false;
 }
 
+/**
+ * print the universal error messaage
+ */
 void errorMessage(bool redirect) {
     char error_message[30] = "An error has occurred\n";
     if (redirect) {
@@ -37,9 +30,16 @@ void errorMessage(bool redirect) {
     }
 }
 
+/**
+ * given an underlying command such as "ls" or "cat", 
+ * execute the command
+ */
 void execUnderlyingCmd(std::string path, std::vector<std::string> args, bool isRedirect) {
-
     int stdout_fd = dup(STDOUT_FILENO);
+    if (stdout_fd == 1) {
+        errorMessage(isRedirect);
+        return;
+    }
 
     if (isRedirect) {
         std::string redirectPath = args[int(args.size()) - 1];
@@ -51,23 +51,33 @@ void execUnderlyingCmd(std::string path, std::vector<std::string> args, bool isR
             fd = open(redirectPath.c_str(), O_CREAT | O_WRONLY);
         }
         
-        dup2(fd, STDOUT_FILENO);
+        int ret = dup2(fd, STDOUT_FILENO);
+        if (ret == -1) {
+            errorMessage(isRedirect);
+            return;
+        }
     }
 
     int diff = 0;
     if (isRedirect) diff = -2;
 
     char* execArgs[int(args.size()) + 1 + diff];
-    // std::cout << "args: ";
     for (int i = 0; i < int(args.size()) + diff; i ++) {
         execArgs[i] = (char*) args[i].c_str();
-        // std::cout << args[i] << " ";
     }
-    // std::cout << std::endl;
     execArgs[args.size() + diff] = NULL;
-    execvp(path.c_str(), execArgs);
+    int ret = execvp(path.c_str(), execArgs);
+    if (ret == -1) {
+        errorMessage(isRedirect);
+        return;
+    }
 
-    if (isRedirect) dup2(stdout_fd, STDOUT_FILENO);
+    if (isRedirect) {
+        int ret = dup2(stdout_fd, STDOUT_FILENO);
+        if (ret == -1) {
+            errorMessage(isRedirect);
+        }
+    }
     return;
 }
 
@@ -76,9 +86,13 @@ void execExit() {
 }
 
 void execCd(std::string dir) {
-    chdir(dir.c_str());
+    int ret = chdir(dir.c_str());
+    if (ret == -1) errorMessage(false);
 }
 
+/**
+ * given a valid executable built-in command, runs it
+ */
 void execBuiltIn(std::vector<std::string> args, std::vector<std::string> &paths) {
     std::string cmd = args[0];
     bool isRedirect = args.size() > 2 && args[args.size() - 2] == ">";
@@ -103,6 +117,10 @@ void execBuiltIn(std::vector<std::string> args, std::vector<std::string> &paths)
     }
 }
 
+/**
+ * searches for a valid path to the given command and if it finds it, executes it
+ * otherwise calls errorMessage
+ */
 void execCmd(std::vector<std::string> args, std::vector<std::string> &paths) {
     std::string cmd = args[0];
     bool isRedirect = args.size() > 2 && args[args.size() - 2] == ">";
@@ -121,6 +139,10 @@ void execCmd(std::vector<std::string> args, std::vector<std::string> &paths) {
     }
 }
 
+/**
+ * given a vector of tokens, execute the tokenized commands
+ * for commands that aren't built-ins, execute them in parallel
+ */
 void execCmds(std::vector<std::vector<std::string>> parallels, std::vector<std::string> &paths) {
     if ((int) parallels.size() == 1 && (parallels[0][0] == "exit" || parallels[0][0] == "cd" || parallels[0][0] == "path")) {
         execBuiltIn(parallels[0], paths);
@@ -129,7 +151,11 @@ void execCmds(std::vector<std::vector<std::string>> parallels, std::vector<std::
     std::vector<pid_t> children;
     for (int i = 0; i < (int) parallels.size(); i ++) {
         int pid = fork();
-        if (pid != 0) {  // this is parent
+        if (pid == -1) {
+            errorMessage(false);
+            return;
+        }
+        else if (pid != 0) {  // this is parent
             children.push_back(pid);
             continue;
         }
@@ -139,35 +165,21 @@ void execCmds(std::vector<std::vector<std::string>> parallels, std::vector<std::
     }
 
     for (int i = 0; i < (int) children.size(); i ++) {
-        waitpid(children[i], NULL, 0);
+        int ret = waitpid(children[i], NULL, 0);
+        if (ret == -1) {
+            errorMessage(false);
+            return;
+        }
     }
 
     return;
 }
 
-std::vector<std::string> splitByDelimiters(std::string s, int &redirectionIdx) {
-    int left = 0;
-    std::vector<std::string> result = {};
-
-    for (int right = 0; right < (int) s.size(); right ++) {
-        if (isspace(s[right]) || s[right] == '>') {
-            if (left < right) {
-                result.push_back(s.substr(left, right - left));
-            }
-            if (s[right] == '>' && redirectionIdx == -1) {
-                result.push_back(">");
-                redirectionIdx = (int) result.size();
-            }
-            left = right + 1;
-        } 
-    }
-    if (left != (int) s.size()) {
-        result.push_back(s.substr(left, int (s.size()) - left));
-    }
-
-    return result;
-}
-
+/**
+ * given string representing 1 line of input, parse into tokens
+ * output: vector in which each element is a vector of string tokens
+ * throw error if given invalid redirect syntax
+ */
 std::vector<std::vector<std::string>> parseInput(std::string s) {
     int left = 0;
     std::vector<std::vector<std::string>> result;
@@ -211,6 +223,11 @@ std::vector<std::vector<std::string>> parseInput(std::string s) {
     return result;
 }
 
+/**
+ * parse the user input in a try/catch block.
+ * modifies parallels to have the output of parseInput for the input line userIn
+ * calls errorMessage if it catches an error due to invalid redirect formatting
+ */
 void parseOrThrow(std::vector<std::vector<std::string>> &parallels, std::string userIn) {
     try {
         parallels = parseInput(userIn);
@@ -237,7 +254,11 @@ int main(int argc, char* argv[]) {
             errorMessage(false);
             return (EXIT_FAILURE);
         }
-        dup2(fd, STDIN_FILENO);
+        int ret = dup2(fd, STDIN_FILENO);
+        if (ret == -1) {
+            errorMessage(false);
+            return (EXIT_FAILURE);
+        }
     }
 
     std::string userIn = "";
