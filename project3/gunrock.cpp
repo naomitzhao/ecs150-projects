@@ -37,6 +37,7 @@ pthread_cond_t hasRequest = PTHREAD_COND_INITIALIZER;
 vector<HttpService *> services;
 
 HttpService *find_service(HTTPRequest *request) {
+  // don't find service if path contains ..
   if ((request->getPath()).find("..") != string::npos) {
     return NULL;
   }
@@ -114,29 +115,46 @@ void handle_request(MySocket *client) {
 
 struct ThreadArgs {
   deque<MySocket*>* connections;
-  int id;
 };
 
+/**
+ * helper thread routine to handle connections
+ */
 void *threadHandler(void *arg) {
   struct ThreadArgs *threadArgs = (struct ThreadArgs *) arg;
   deque<MySocket*>* connections = threadArgs->connections;
-
-  
   
   while (true) {
-    dthread_mutex_lock(&requestLock);
+    // lock
+    int ret = dthread_mutex_lock(&requestLock);
+    if (ret == -1) {
+      throw("could not lock");
+    }
+
+    // go to sleep if no requests
     while (requests == 0) {
       dthread_cond_wait(&hasRequest, &requestLock);
     }
     
+    // get the first connection in the queue (fifo)
     MySocket* connection = (*connections)[0];
     (*connections).pop_front();
     requests --;
-    dthread_cond_signal(&bufferHasSpace);
-    dthread_mutex_unlock(&requestLock);
-    // cout << threadArgs->id << " handling request" << endl;
+
+    // signal that there is space in the buffer
+    ret = dthread_cond_signal(&bufferHasSpace);
+    if (ret == -1) {
+      throw("could not signal");
+    }
+
+    // unlock
+    ret = dthread_mutex_unlock(&requestLock);
+    if (ret == -1) {
+      throw("could not lock");
+    }
+    
+    // handle the request (does not require lock)
     handle_request(connection);
-    // dthread_mutex_lock(&requestLock);
   }
   
   // dthread_mutex_unlock(&requestLock);
@@ -184,37 +202,59 @@ int main(int argc, char *argv[]) {
   // The order that you push services dictates the search order
   // for path prefix matching
   services.push_back(new FileService(BASEDIR));
-  deque<MySocket*> connections;
+  deque<MySocket*> connections;  // queue (fifo) to hold incoming requests after accepting
 
-  vector<pthread_t> children;
+  vector<pthread_t> children;  // helper threads
   for (int idx = 0; idx < THREAD_POOL_SIZE; idx ++) {
     pthread_t threadId;
+
+    // pass the connections queue to each helper thread
     struct ThreadArgs *threadArgs = new struct ThreadArgs;
     threadArgs->connections = &connections;
-    threadArgs->id = idx;
-    dthread_create(&threadId, NULL, threadHandler, threadArgs);
+
+    // create the helper thread
+    int ret = dthread_create(&threadId, NULL, threadHandler, threadArgs);
+    if (ret == -1) {
+      throw("could not create thread");
+    }
+
+    // add helper thread to children list
     children.push_back(threadId);
     threadArgs = NULL;
   }
   
-  
-  
+  // server runs indefinitely
   while(true) {
     sync_print("waiting_to_accept", "");
-    // cout << "waiting to accept" << endl;
     client = server->accept();
     sync_print("client_accepted", "");
 
-    dthread_mutex_lock(&requestLock);
+    // lock
+    int ret = dthread_mutex_lock(&requestLock);
+    if (ret == -1) {
+      throw("could not unlock");
+    }
+
+    // if the buffer is "full", go to sleep until it isn't
     while (requests == BUFFER_SIZE) {
       dthread_cond_wait(&bufferHasSpace, &requestLock);
     }
     
+    // add the new connection
     connections.push_back(client);
     requests ++;
-    // cout << "there are " << requests << " requests" << endl;
-    dthread_cond_broadcast(&hasRequest);
-    dthread_mutex_unlock(&requestLock);
+
+    // wake up all sleeping helper threads
+    ret = dthread_cond_broadcast(&hasRequest);
+    if (ret == -1) {
+      throw("could not broadcast");
+    }
+    
+    // unlock
+    ret = dthread_mutex_unlock(&requestLock);
+    if (ret == -1) {
+      throw("could not unlock");
+    }
   }
   
 }
