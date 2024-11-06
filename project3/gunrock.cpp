@@ -114,28 +114,32 @@ void handle_request(MySocket *client) {
 
 struct ThreadArgs {
   deque<MySocket*>* connections;
-  // int id;
+  int id;
 };
 
 void *threadHandler(void *arg) {
   struct ThreadArgs *threadArgs = (struct ThreadArgs *) arg;
   deque<MySocket*>* connections = threadArgs->connections;
 
-  dthread_mutex_lock(&requestLock);
+  
   
   while (true) {
+    dthread_mutex_lock(&requestLock);
     while (requests == 0) {
       dthread_cond_wait(&hasRequest, &requestLock);
     }
     
-    // cout << threadArgs->id << endl;
-    handle_request((*connections)[0]);
+    MySocket* connection = (*connections)[0];
     (*connections).pop_front();
     requests --;
     dthread_cond_signal(&bufferHasSpace);
+    dthread_mutex_unlock(&requestLock);
+    // cout << threadArgs->id << " handling request" << endl;
+    handle_request(connection);
+    // dthread_mutex_lock(&requestLock);
   }
   
-  dthread_mutex_unlock(&requestLock);
+  // dthread_mutex_unlock(&requestLock);
   delete threadArgs;
   return NULL;
 }
@@ -187,25 +191,30 @@ int main(int argc, char *argv[]) {
     pthread_t threadId;
     struct ThreadArgs *threadArgs = new struct ThreadArgs;
     threadArgs->connections = &connections;
-    // threadArgs->id = idx;
+    threadArgs->id = idx;
     dthread_create(&threadId, NULL, threadHandler, threadArgs);
     children.push_back(threadId);
     threadArgs = NULL;
   }
   
-  dthread_mutex_lock(&requestLock);
+  
   
   while(true) {
     sync_print("waiting_to_accept", "");
+    // cout << "waiting to accept" << endl;
+    client = server->accept();
+    sync_print("client_accepted", "");
+
+    dthread_mutex_lock(&requestLock);
     while (requests == BUFFER_SIZE) {
       dthread_cond_wait(&bufferHasSpace, &requestLock);
     }
-    client = server->accept();
+    
     connections.push_back(client);
-    sync_print("client_accepted", "");
     requests ++;
-    dthread_cond_signal(&hasRequest);
+    // cout << "there are " << requests << " requests" << endl;
+    dthread_cond_broadcast(&hasRequest);
+    dthread_mutex_unlock(&requestLock);
   }
-
-  dthread_mutex_unlock(&requestLock);
+  
 }
