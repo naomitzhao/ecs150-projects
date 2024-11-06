@@ -29,9 +29,17 @@ string BASEDIR = "static";
 string SCHEDALG = "FIFO";
 string LOGFILE = "/dev/null";
 
+int requests;
+pthread_mutex_t requestLock = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t bufferHasSpace = PTHREAD_COND_INITIALIZER;
+pthread_cond_t hasRequest = PTHREAD_COND_INITIALIZER;
+
 vector<HttpService *> services;
 
 HttpService *find_service(HTTPRequest *request) {
+  if ((request->getPath()).find("..") != string::npos) {
+    return NULL;
+  }
    // find a service that is registered for this path prefix
   for (unsigned int idx = 0; idx < services.size(); idx++) {
     if (request->getPath().find(services[idx]->pathPrefix()) == 0) {
@@ -104,6 +112,34 @@ void handle_request(MySocket *client) {
   delete client;
 }
 
+struct ThreadArgs {
+  deque<MySocket*>* connections;
+  // int id;
+};
+
+void *threadHandler(void *arg) {
+  struct ThreadArgs *threadArgs = (struct ThreadArgs *) arg;
+  deque<MySocket*>* connections = threadArgs->connections;
+
+  dthread_mutex_lock(&requestLock);
+  
+  while (true) {
+    while (requests == 0) {
+      dthread_cond_wait(&hasRequest, &requestLock);
+    }
+    
+    // cout << threadArgs->id << endl;
+    handle_request((*connections)[0]);
+    (*connections).pop_front();
+    requests --;
+    dthread_cond_signal(&bufferHasSpace);
+  }
+  
+  dthread_mutex_unlock(&requestLock);
+  delete threadArgs;
+  return NULL;
+}
+
 int main(int argc, char *argv[]) {
 
   signal(SIGPIPE, SIG_IGN);
@@ -144,11 +180,32 @@ int main(int argc, char *argv[]) {
   // The order that you push services dictates the search order
   // for path prefix matching
   services.push_back(new FileService(BASEDIR));
+  deque<MySocket*> connections;
+
+  vector<pthread_t> children;
+  for (int idx = 0; idx < THREAD_POOL_SIZE; idx ++) {
+    pthread_t threadId;
+    struct ThreadArgs *threadArgs = new struct ThreadArgs;
+    threadArgs->connections = &connections;
+    // threadArgs->id = idx;
+    dthread_create(&threadId, NULL, threadHandler, threadArgs);
+    children.push_back(threadId);
+    threadArgs = NULL;
+  }
+  
+  dthread_mutex_lock(&requestLock);
   
   while(true) {
     sync_print("waiting_to_accept", "");
+    while (requests == BUFFER_SIZE) {
+      dthread_cond_wait(&bufferHasSpace, &requestLock);
+    }
     client = server->accept();
+    connections.push_back(client);
     sync_print("client_accepted", "");
-    handle_request(client);
+    requests ++;
+    dthread_cond_signal(&hasRequest);
   }
+
+  dthread_mutex_unlock(&requestLock);
 }

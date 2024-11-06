@@ -1,3 +1,6 @@
 .vscode
 wish
 tests
+*.o
+*.d
+gunrock_web
