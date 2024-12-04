@@ -158,6 +158,14 @@ int main(int argc, char *argv[]) {
 
   set_log_file(LOGFILE);
 
+  cout << "hi" << endl;
+
+  Disk disk = Disk(argv[2], 4096);
+  LocalFileSystem lfs = LocalFileSystem(&disk);
+  super_t super;
+  lfs.readSuperBlock(&super);
+  cout << " finished reading super block." << endl;
+
   cout << "Lisening on port " << PORT << endl;
   
   sync_print("init", "");
