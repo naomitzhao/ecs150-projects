@@ -14,8 +14,9 @@ using namespace std;
 vector<string> splitStringByDelimiter(string s, string delimiter) {
   vector<string> substrings;
   int idx = 0;
-  while (idx < (int) s.size() && idx != (int) string::npos) {
+  while (idx < (int) s.size()) {
     idx = s.find(delimiter);
+    if (idx == -1) break;
     string substring = s.substr(0, idx);
     if (substring.size() > 0) substrings.push_back(substring);
     s.erase(0, idx + delimiter.size());
