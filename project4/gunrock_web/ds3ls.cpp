@@ -39,13 +39,19 @@ int main(int argc, char *argv[]) {
     cerr << "    $ " << argv[0] << " tests/disk_images/a.img /a/b" << endl;
     return 1;
   }
-  
+
   // parse command line arguments
+  
   Disk *disk = new Disk(argv[1], UFS_BLOCK_SIZE);
   LocalFileSystem *fileSystem = new LocalFileSystem(disk);
   string directory = string(argv[2]);
   
+  // cout << directory << endl;
   vector<string> pathDirectories = splitStringByDelimiter(directory, "/");
+  // for (int i = 0; i < (int) pathDirectories.size(); i ++) {
+  //   cout << pathDirectories[i] << " ";
+  // }
+  // cout << endl;
 
   int currInodeNum = 0;
   for (int i = 0; i < (int) pathDirectories.size(); i ++) {
@@ -64,10 +70,10 @@ int main(int argc, char *argv[]) {
 
   if (currInode.type == UFS_REGULAR_FILE) {
     cout << currInodeNum << "\t" << pathDirectories.back() << endl;
-    return 0;
+    return 1;
   }
 
-  // cout << "got to directory" << endl;
+  // cout << "got to directory " << pathDirectories.back() << " with inode number " << currInodeNum << endl;
 
   vector<dir_ent_t> files;
   int inodeSize = currInode.size;

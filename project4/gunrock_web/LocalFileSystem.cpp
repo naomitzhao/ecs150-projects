@@ -77,8 +77,12 @@ int LocalFileSystem::lookup(int parentInodeNumber, string name) {
 
     for (int j = 0; j < 4096; j += sizeof(dir_ent_t)) {
       memcpy(&entry, buffer + j, sizeof(dir_ent_t));
-      // cout << entry.name << endl;
-      if (entry.name == name.c_str()) return entry.inum;
+      // cout << entry.name << ", ";
+      
+      if (strcmp(entry.name, name.c_str()) == 0) {
+        // cout << "found " << entry.name << ", inode number = " << entry.inum << endl; 
+        return entry.inum;
+      }
     }
   }
   
