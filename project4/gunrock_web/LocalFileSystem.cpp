@@ -143,15 +143,28 @@ int LocalFileSystem::read(int inodeNumber, void *buffer, int size) {
   inode_t inode = inodes[inodeNumber];
 
   char* charBuffer = static_cast<char*>(buffer);
+  // cout << "size of charBuffer is " << sizeof(charBuffer) << endl;
+  // cout << charBuffer << endl;
 
-  int blocksToRead = inode.size / 4096;
-  if (inode.size % 4096) blocksToRead ++;
+  int bytesToRead = inode.size;
+  int blocksToRead = bytesToRead / 4096;
+  if (bytesToRead % 4096) blocksToRead ++;
+
+  // cout << "reading " << bytesToRead << " bytes from " << blocksToRead << " blocks" << endl;
 
   for (int i = 0; i < blocksToRead; i ++) {
     char blockBuffer[4096];
     this->disk->readBlock(inode.direct[i], blockBuffer);
-    memcpy(charBuffer + i, blockBuffer, size);
+    int readingBytes = 4096;
+    if (bytesToRead < 4096) readingBytes = bytesToRead;
+    // cout << readingBytes << " from block " << inode.direct[i] << endl;
+    memcpy(charBuffer + i * 4096, blockBuffer, readingBytes);
+    // cout << charBuffer << endl;
+    bytesToRead -= readingBytes;
   }
+
+  // cout << charBuffer << endl;
+  // cout << "done with read" << endl;
 
   return size;
 }
