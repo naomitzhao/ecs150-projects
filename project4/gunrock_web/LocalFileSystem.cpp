@@ -109,42 +109,24 @@ int LocalFileSystem::read(int inodeNumber, void *buffer, int size) {
 
   super_t super;
   readSuperBlock(&super);
-  unsigned char dataBitmap[super.data_bitmap_len];
-  readDataBitmap(&super, dataBitmap);
+  int numInodes = super.num_inodes;
 
-  inode_t inode;
-  stat(inodeNumber, &inode);
-
-  int bitsToRead = inode.size;
-  int idx = 0;
+  inode_t inodes[numInodes];
+  readInodeRegion(&super, inodes);
+  inode_t inode = inodes[inodeNumber];
 
   char* charBuffer = static_cast<char*>(buffer);
 
-  // iterate over the inode's direct array
-  for (int i = 0; i < int(sizeof(inode.direct) / sizeof(unsigned int)); i ++) {
-    int blockNum = inode.direct[i];
+  int blocksToRead = inode.size / 4096;
+  if (inode.size % 4096) blocksToRead ++;
 
-    // check if block is allocated
-    if (!bitIsSet(blockNum, dataBitmap)) {
-      // if not,
-      break;
-    }
-
-    char blockContent[4096];
-    this->disk->readBlock(blockNum, blockContent);
-
-    // read less than the full block
-    if (bitsToRead < 4096) {
-      memcpy(charBuffer + idx, blockContent, bitsToRead);
-      break;
-    } else {
-      memcpy(charBuffer + idx, blockContent, 4096);
-      bitsToRead -= 4096;
-      idx += 4096;
-    }
+  for (int i = 0; i < blocksToRead; i ++) {
+    char blockBuffer[4096];
+    this->disk->readBlock(inode.direct[i], blockBuffer);
+    memcpy(charBuffer + i, blockBuffer, size);
   }
 
-  return inode.size - bitsToRead;
+  return size;
 }
 
 int LocalFileSystem::create(int parentInodeNumber, int type, string name) {
