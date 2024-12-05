@@ -22,6 +22,18 @@ void LocalFileSystem::readSuperBlock(super_t *super) {
 
 void LocalFileSystem::readInodeBitmap(super_t *super, unsigned char *inodeBitmap) {
 
+  int bitmapAddr = super->inode_bitmap_addr;
+  int bitmapBlocks = super->inode_bitmap_len;
+  int unreadBits = super->num_inodes;
+
+  for (int i = 0; i < bitmapBlocks; i ++) {
+    char buffer[4096];
+    this->disk->readBlock(bitmapAddr, buffer);
+    int bitsToRead = 4096;
+    if (unreadBits < 4096) bitsToRead = unreadBits;
+    memcpy(inodeBitmap + i * 4096, buffer, super->num_inodes);
+    unreadBits -= bitsToRead;
+  }
 }
 
 void LocalFileSystem::writeInodeBitmap(super_t *super, unsigned char *inodeBitmap) {
@@ -29,7 +41,18 @@ void LocalFileSystem::writeInodeBitmap(super_t *super, unsigned char *inodeBitma
 }
 
 void LocalFileSystem::readDataBitmap(super_t *super, unsigned char *dataBitmap) {
-
+  int bitmapAddr = super->data_bitmap_addr;
+  int bitmapBlocks = super->data_bitmap_len;
+  int unreadBits = super->num_inodes;
+  
+  for (int i = 0; i < bitmapBlocks; i ++) {
+    char buffer[4096];
+    this->disk->readBlock(bitmapAddr + i, buffer);
+    int bitsToRead = 4096;
+    if (unreadBits < 4096) bitsToRead = unreadBits;
+    memcpy(dataBitmap + i * 4096, buffer, bitsToRead);
+    unreadBits -= bitsToRead;
+  }
 }
 
 void LocalFileSystem::writeDataBitmap(super_t *super, unsigned char *dataBitmap) {
