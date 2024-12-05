@@ -56,7 +56,10 @@ int main(int argc, char *argv[]) {
   int currInodeNum = 0;
   for (int i = 0; i < (int) pathDirectories.size(); i ++) {
     currInodeNum = fileSystem->lookup(currInodeNum, pathDirectories[i]);
-    if (currInodeNum == ENOTFOUND) return -ENOTFOUND;
+    if (currInodeNum == -ENOTFOUND) {
+      cerr << "Directory not found" << endl;
+      return 1;
+    }
   }
 
   super_t super;
