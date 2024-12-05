@@ -70,7 +70,7 @@ int main(int argc, char *argv[]) {
 
   if (currInode.type == UFS_REGULAR_FILE) {
     cout << currInodeNum << "\t" << pathDirectories.back() << endl;
-    return 1;
+    return 0;
   }
 
   // cout << "got to directory " << pathDirectories.back() << " with inode number " << currInodeNum << endl;
